@@ -75,8 +75,8 @@ def perform_mc(star, nn, n_mc, m_best, X_best, X_err, mean, std):
     m_best --> number of stars selected as best candidates
     X_best --> five initial features of the best candidates
     X_err  --> error in the features
-    mean --> mean of the features in the training set (for scaling)
-    std  --> standard deviation of the features in the training set (for scaling)
+    mean   --> mean of the features in the training set (for scaling)
+    std    --> standard deviation of the features in the training set (for scaling)
     
     OUTPUT --------------------------------------------------------------------
     
@@ -155,10 +155,31 @@ def write_output(path_res, filename, indices, m_best, Gaia_best, TYC_best, h_bes
 
 
 
+def write_output_2(path_res, filename, indices, m_best, Gaia_best, h_best,
+                 X_best, X_err, GMag_best, D_mean, D_std):
+
+    out_file = open(path_res + filename, "w") # Output file
+
+    out_file.write('---------------------------------------------------------------------------------------------------------------------------------------------------------------------\n')
+    out_file.write('Gaia-ID   h   RA_ICRS   e_RA_ICRS   DE_ICRS   e_DE_ICRS   Plx   e_Plx   pmRA     e_pmRA    pmDE     e_pmDE     GMag   Dmean   Dstd      \n')
+    out_file.write('              deg       deg         deg       deg         mas   mas     mas/yr   mas/yr    mas/yr   mas/yr     mag                      \n')
+    out_file.write('---------------------------------------------------------------------------------------------------------------------------------------------------------------------\n')        
+
+    for i in range(m_best):
+        if i in indices or np.size(indices) == m_best:
+            out_file.write(str(Gaia_best[i]) + '|' + str(h_best[i]) + \
+            '|' + str(X_best[i,0] ) + '|' + str(X_err[i,0]) + '|' + str(X_best[i,1]) + \
+            '|' + str(X_err[i,1]) + '|' + \
+             '|' + str(X_best[i,2]) + '|' + str(X_err[i,2]) +'|' + str(X_best[i,3]) + \
+             '|' + str(X_err[i,3]) + '|' + str(X_best[i,4]) + '|' + str(X_err[i,4]) + \
+             '|' + str(GMag_best[i]) + '|' + str(D_mean[i]) + '|' + str(D_std[i]) + '\n')
+
+    out_file.close()
 
 
 
-def main(run, apply_neural_network, parallel_mc):
+
+def main(run, gaia, catalog, apply_neural_network, parallel_mc):
     
     '''
     DESCRIPTION ---------------------------------------------------------------
@@ -168,6 +189,8 @@ def main(run, apply_neural_network, parallel_mc):
     ATTRIBUTES ----------------------------------------------------------------
     
     run                            --> number code of file to process
+    gaia                           --> Use gaia DR1 or DR2
+    catalog                        --> HVS catalog to use
     apply_neural_network (boolean) --> True: Apply the NN to get the hypothesis
                                        False: Read the hypothesis from a file
     parallel_mc (boolean)          --> True: Perform MC in parallel
@@ -180,32 +203,48 @@ def main(run, apply_neural_network, parallel_mc):
 
     print '\nReading in data....'
 
-    path_dat = '/disks/strw14/TvdB/Master2/Dataset/'
-    path_res = '/disks/strw14/TvdB/Master2/Keras/'
-
-    # Gaia DR1/TGAS data
-    RA2000, DE2000, RA, sigma_RA, dec, sigma_dec,  par, sigma_par, \
-    mu_RA, sigma_mu_RA, mu_dec, sigma_mu_dec, GMag  = \
-                                np.genfromtxt(path_dat + "TGAS.tsv",
-                                              skip_header = 70,
-                                              filling_values = 0,
-                                              usecols = [0,1,4,5,6,7,8,9,10,11,12,13,14],
-                                              unpack = True,
-                                              invalid_raise = False)
     
-    # Read names separated because of strings 
-    TYC, Gaia = np.genfromtxt(path_dat + "TGAS.tsv", skip_header = 70,
-                              filling_values= 0, usecols = [2,3], dtype=np.str, unpack=True)
     
+    path_mean = '/disks/strw14/TvdB/Master2/Dataset/'
+    path_par = '/disks/strw14/TvdB/Master2/10Runs/3-layers/'
+    if gaia == 1: # Gaia DR1/TGAS data
+        path_dat = '/disks/strw14/TvdB/Master2/Dataset/'
+        path_res = '/disks/strw14/TvdB/Master2/'
+        RA2000, DE2000, RA, sigma_RA, dec, sigma_dec,  par, sigma_par, \
+        mu_RA, sigma_mu_RA, mu_dec, sigma_mu_dec, GMag  = \
+                                    np.genfromtxt(path_dat + "TGAS.tsv",
+                                                  skip_header = 70,
+                                                  filling_values = 0,
+                                                  usecols = [0,1,4,5,6,7,8,9,10,11,12,13,14],
+                                                  unpack = True,
+                                                  invalid_raise = False)
+        
+        # Read names separated because of strings 
+        TYC, Gaia = np.genfromtxt(path_dat + "TGAS.tsv", skip_header = 70,
+                                  filling_values= 0, usecols = [2,3], dtype=np.str, unpack=True)
+    
+    
+    else: # Gaia DR2 data
+        path_dat = '/net/doorn/data1/Gaia_DR2/Cleaned/1000-1999/'
+        path_res = '/net/doorn/data1/Gaia_DR2/Results/1000-1/'
+        Gaia, RA, sigma_RA, dec, sigma_dec, par, sigma_par, mu_RA, sigma_mu_RA, \
+        mu_dec, sigma_mu_dec, GMag  = np.genfromtxt(path_dat + "Gaia_DR2_chunk0.txt",
+                                                  unpack = True,
+                                                  invalid_raise = False)
+        
+        
     # Mean and standard deviation of each feature for scaling
-    mean, std = np.loadtxt(path_dat + "Mean_std_nobias.txt", unpack=True)
-    
+    if catalog != 1:
+        mean, std = np.loadtxt(path_mean + "Mean_std_nobias.txt", unpack=True)
+    else:
+        mean, std = np.loadtxt(path_mean + "Mean_std_omar.txt", unpack=True) 
+        
     # Correct units
-    RA = RA * np.pi/180. # [rad]
-    dec = dec * np.pi/180. # [rad]
+    RA = RA * np.pi/180. # deg --> rad
+    dec = dec * np.pi/180. # deg --> rad
 
-    sigma_RA  =  sigma_RA * 4.8481368e-9 # [rad]
-    sigma_dec = sigma_dec * 4.8481368e-9 # [rad]
+    sigma_RA  =  sigma_RA * 4.8481368e-9 # mas --> rad
+    sigma_dec = sigma_dec * 4.8481368e-9 # mas --> rad
 
 
 
@@ -230,7 +269,7 @@ def main(run, apply_neural_network, parallel_mc):
     # If stated specicific file to process do that, else list of files
     if run == str(9999):
         # Number codes to use for files to process
-        names = ['1', '2', '3']
+        names = ['0','1', '2', '3','4','5','6','7','8','9']
     else:
         names = [run]
      
@@ -245,7 +284,7 @@ def main(run, apply_neural_network, parallel_mc):
         # Load parameters of the NN
         neurons, percentage, cost_function, activation, activation_last_layer, optimizer, \
         lr, decay, initializer, dropout, regularization, n_epochs, n_batchsize = \
-                                    np.genfromtxt(path_res + 'nn_parameters' + name + '.txt',
+                                    np.genfromtxt(path_par + 'nn_parameters' + name + '.txt',
                                                   dtype = None,
                                                   skip_header = 3,
                                                   skip_footer = 8,
@@ -294,7 +333,7 @@ def main(run, apply_neural_network, parallel_mc):
                             n_epochs, n_batchsize, verbose=1)
     
         # Load synaptic weights
-        nn.model.load_weights(path_res + 'weights' + name + '.hdf5', by_name=False)
+        nn.model.load_weights(path_par + 'weights' + name + '.hdf5', by_name=False)
         
         
         
@@ -306,13 +345,16 @@ def main(run, apply_neural_network, parallel_mc):
             print '\nPropagating forward...'
              
             # Predictions on the gaia data through forward propagation
-            hypothesis = nn.model.predict(X_s, verbose=1).flatten()
+            hypothesis = nn.model.predict(X_s, batch_size=64, verbose=1).flatten()
             
             # Make sure hypothesis is always in range [0,1]
             hypothesis = map_hypothesis(nn, hypothesis)
             
-            np.save(path_res + 'h_tgas' + name + '.npy', zip(Gaia, TYC, hypothesis))
-        
+            if gaia ==1:
+                np.save(path_res + 'h_tgas' + name + '.npy', zip(Gaia, TYC, hypothesis))
+            else:
+                np.save(path_res + 'h_tgas' + name + '.npy', zip(Gaia, hypothesis))
+                
         else: # Get the hypothesis loading a file
             
             print '\nLoading data from: h_tgas' + name + '.npy'
@@ -337,17 +379,20 @@ def main(run, apply_neural_network, parallel_mc):
         X_best = X[idx_best] # Physical Units features (not scaled!!)
 
         # Selecting the magnitude and errors for the best candidates
+        if gaia ==1:
+            TYC_best = TYC[idx_best]
+            RA2000_best = RA2000[idx_best]
+            DE2000_best = DE2000[idx_best]
+
         Gaia_best = Gaia[idx_best]
-        TYC_best = TYC[idx_best]
-        GMag_best = GMag[idx_best]
-        RA2000_best = RA2000[idx_best]
-        DE2000_best = DE2000[idx_best]
         sigma_RA_best = sigma_RA[idx_best]
         sigma_dec_best = sigma_dec[idx_best]
         sigma_par_best = sigma_par[idx_best]
         sigma_mu_RA_best = sigma_mu_RA[idx_best]
         sigma_mu_dec_best = sigma_mu_dec[idx_best]
-
+        GMag_best = GMag[idx_best]
+        
+        
         # Error feature matrix
         X_err = np.concatenate((sigma_RA_best, sigma_dec_best, sigma_par_best,
                                 sigma_mu_RA_best, sigma_mu_dec_best)) # 5 parameters error solution
@@ -390,37 +435,26 @@ def main(run, apply_neural_network, parallel_mc):
         D_std = np.std(D, 1)   # Standard deviation for each best candidate
         
       
-        X_best[:,0] = X_best[:,0]*180./np.pi  # RA, [deg]
-        X_best[:,1] = X_best[:,1]*180./np.pi  # dec, [deg]
+        X_best[:,0] = X_best[:,0]*180./np.pi  # rad --> deg
+        X_best[:,1] = X_best[:,1]*180./np.pi  # rad --> deg
 
 
         # Save best candidates
         filename = 'Dbest' + name + '.txt'
-        write_output(path_res, filename, idx_best, m_best, Gaia_best, TYC_best,
+        if gaia ==1:
+            write_output(path_res, filename, idx_best, m_best, Gaia_best, TYC_best,
                      h_best, X_best, X_err, RA2000_best, DE2000_best, GMag_best, D_mean, D_std)
-
-        
+        else:
+            write_output_2(path_res, filename, idx_best, m_best, Gaia_best,
+                     h_best, X_best, X_err, GMag_best, D_mean, D_std)
+            
+            
+            
         print "\nPerforming Monte-Carlo took %i seconds = %s hours"\
                     %(time.time()-t_mc, round((time.time()-t_mc)/60./60. ,3))
 
 
-
-
-
-        # ==================== Selecting TOP Candidates ===================== #
-
-
-        idx_TOP = np.where(D_mean - D_std > 0.9)[-1] # Defining the top candidates
-        
-        print '\nNumber of stars with D_mean - D_std > 0.9:', np.size(idx_TOP)
-        
-        # Save top candidates
-        filename = 'top_candidates' + name + '.txt'
-        write_output(path_res, filename, idx_TOP, m_best, Gaia_best, TYC_best,
-                     h_best, X_best, X_err, RA2000_best, DE2000_best, GMag_best, D_mean, D_std)
-        
-        
-        
+     
         # =================================================================== #
                 
         print "\nThe code took %i seconds = %s hours"\
@@ -437,6 +471,14 @@ def new_option_parser():
     # Code of file to process
     op.add_option("-r", "--run", default = '9999', dest="run",
                   help="Number code of file to process (default: 0)", type='string')
+
+    # Use Gaia DR1 or DR2
+    op.add_option("-g", "--gaia", default = '2', dest="gaia",
+                  help="Gaia DR to use (default: 2)", type='int')
+    
+    # HVS catalog to use
+    op.add_option("-c", "--catalog", default = 0, dest="catalog",
+                  help="HVS catalog to use (default: 0)", type='int')
     
     # Get hypothesis through neural network or by loading a file
     op.add_option("-n", "--apply_neural_network", default = False, dest="apply_neural_network",

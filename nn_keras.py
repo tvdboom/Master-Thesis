@@ -29,7 +29,7 @@ from keras.utils.generic_utils import get_custom_objects # For custom tanh activ
 
 t_init = time.time() # to measure the time the whole process takes
 
-np.random.seed(2) # For reproducibility
+#np.random.seed(2)   # For reproducibility
 
 
 
@@ -109,25 +109,58 @@ def change_target_values(activation_last_layer, Y_train, Y_val, Y_test):
     Adapted target values
     
     '''
+    Y_train = Y_train.astype(float)
+    Y_val = Y_val.astype(float)
+    Y_test = Y_test.astype(float)
     
-    for data in (Y_train, Y_val, Y_test):
+    if activation_last_layer == 'tanh':
+        Y_train[Y_train == 0] = -0.577
+        Y_train[Y_train == 1] = 0.577
+        Y_val[Y_val == 0] = -0.577
+        Y_val[Y_val == 1] = 0.577
+        Y_test[Y_test == 0] = -0.577
+        Y_test[Y_test == 1] = 0.577
+        
+    elif activation_last_layer == 'custom_tanh': # maximum already at 1
+        Y_train[Y_train == 0] = -1
+        Y_val[Y_val == 0] = -1
+        Y_test[Y_test == 0] = -1
+        
+    else: # sigmoid logistic function
+        Y_train[Y_train == 0] = 0.211
+        Y_train[Y_train == 1] = 0.789
+        Y_val[Y_val == 0] = 0.211
+        Y_val[Y_val == 1] = 0.789
+        Y_test[Y_test == 0] = 0.211
+        Y_test[Y_test == 1] = 0.789
     
-        if activation_last_layer == 'tanh':
-            data[data == 0] = -0.577
-            data[data == 1] = 0.577
-        
-        elif activation_last_layer == 'custom_tanh': # maximum already at 1
-            data[data == 0] = -1
-        
-        else: # sigmoid logistic function
-            data[data == 0] = 0.211
-            data[data == 1] = 0.789
-
     return Y_train, Y_val, Y_test
 
 
+
+def make_hypothesis_plot(run, h):
+    import matplotlib.pyplot as plt
+    path_plt = '/disks/strw14/TvdB/Master2/Plots/'
+
+    fig, ax = plt.subplots(figsize=(14, 9))
+    plt.hist(h, 1000, histtype='step', color='k', lw=2)
+    plt.plot([0.5,0.5], [1, 1e5], '--', linewidth=2, color='gray', lw=2)
+    ax.text(0.13,4.2e4,'Background Stars',color='blue',fontsize=35)
+    ax.text(0.62,4.2e4,'HVS Candidates',color='red',fontsize=35)
+    #plt.yscale('log')
+    plt.xlim(0,1)
+    plt.ylim(1,1e5)
+    plt.xlabel('$h$', fontsize=45)
+    plt.ylabel('Counts', fontsize=45)
+    ax.yaxis.label.set_color('white')
+    #ax.tick_params(axis='y', colors='white')
+    plt.xticks(fontsize=30)
+    plt.yticks(fontsize=30)
+    plt.tight_layout()
+    plt.savefig(path_plt + 'hypothesis_training' + str(run) + '.png')
+    plt.savefig(path_plt + 'hypothesis_training' + str(run) + '.pdf')
         
-        
+    
     
 def load_data(path, percentage):
     
@@ -145,8 +178,8 @@ def load_data(path, percentage):
     
     X_train --> features of the training set
     Y_train --> values of the training set (1 for HVS and 0 for normal star)
-    X_val --> features of the cross-validation set
-    Y_val --> values of the cross-validation set (default: 1 for HVS and 0 otherwise)
+    X_val   --> features of the cross-validation set
+    Y_val   --> values of the cross-validation set (default: 1 for HVS and 0 otherwise)
     X_test  --> features of the test set
     Y_test  --> values of the test set (default: 1 for HVS and 0 otherwise)
     
@@ -157,7 +190,6 @@ def load_data(path, percentage):
     # Training set: labeled data on which the NN learns the classification rule
     X_train = np.load(path + "Training_Set.npy")
     Y_train = np.load(path + "Training_Set_output.npy")
-    
     
     # Validation set: labeled data to choose the best values for the hyper-parameters
     X_val = np.load(path + "CrossVal_Set.npy")
@@ -172,7 +204,7 @@ def load_data(path, percentage):
     X_train, Y_train = shuffle(X_train, Y_train) 
     X_val, Y_val = shuffle(X_val, Y_val)
     X_test, Y_test = shuffle(X_test, Y_test)
-
+        
     return X_train[:len(X_train)*percentage/100], Y_train[:len(Y_train)*percentage/100], \
            X_val[:len(X_val)*percentage/100], Y_val[:len(Y_val)*percentage/100], \
            X_test[:len(X_test)*percentage/100], Y_test[:len(Y_test)*percentage/100]
@@ -373,7 +405,7 @@ class neural_network(object):
         if self.verbose > 0: print '\nTraining neural network...' 
         
         # Fit the model
-        loss = loss_history(n=1000) # check loss every n batches
+        loss = loss_history(n = len(X_train)/self.n_batchsize/1000) # check loss every n batches (1000 times)
         self.model.fit(X_train, Y_train, validation_data=(X_test, Y_test),
                             shuffle=True, epochs=self.n_epochs, batch_size=self.n_batchsize,
                             callbacks=[loss], verbose=self.verbose)
@@ -381,7 +413,7 @@ class neural_network(object):
         return loss
         
     
-    def performance_evaluation(self, X_test, Y_test, threshold=0.5):
+    def performance_evaluation(self, run, X_test, Y_test, threshold=0.5, make_plot=False):
         
         '''        
         DESCRIPTION -----------------------------------------------------------
@@ -465,6 +497,16 @@ class neural_network(object):
         # Map hypothesis to range [0,1]
         hypothesis = map_hypothesis(self, hypothesis)
 
+        # Make hypothesis plot
+        if make_plot: make_hypothesis_plot(run, hypothesis)
+
+        i_fn = np.where((hypothesis < threshold) & (Y_test == max(Y_test)))
+        i_fp = np.where((hypothesis > threshold) & (Y_test == min(Y_test)))
+        
+        np.savetxt('Others/false_negatives.txt', X_test[i_fn])
+        np.savetxt('Others/false_positives.txt', X_test[i_fp])
+        
+        
         TP, FP, FN, TN = confusion_matrix(hypothesis, Y_test)
 
         self.P = precision(float(TP), float(FP))
@@ -515,8 +557,8 @@ class neural_network(object):
                    Activation function: %s\n\
                    Activation function in output layer: %s\n\
                    Optimizer: %s\n\
-                      >>> Learning rate: %.3f\n\
-                      >>> Decay: %.3f\n\
+                      >>> Learning rate: %.4f\n\
+                      >>> Decay: %.4f\n\
                    Kernel initializer: %s\n\
                    Dropout ratio: %.1f\n\
                    Regularization: %s\n\
@@ -559,7 +601,7 @@ class neural_network(object):
 
 def main(run, percentage, neurons, cost_function, activation, activation_last_layer,
                  optimizer, lr, decay, initializer, dropout, regularization,
-                 n_epochs, n_batchsize, verbose):
+                 n_epochs, n_batchsize, verbose, catalog):
     
     '''
     DESCRIPTION ---------------------------------------------------------------
@@ -583,22 +625,29 @@ def main(run, percentage, neurons, cost_function, activation, activation_last_la
     regularization        --> Regularization method (None, l1, l2, l1_l2)
     n_epochs              --> number of epochs to train
     n_batchsize           --> number of star per batch    
-  
+    verbose               --> Verbosity level
+    catalog               --> HVS catalog to use
     '''
     
             
     # ============================= Load data =============================== #
     
-    path_dat = '/disks/strw14/TvdB/Master2/Dataset/' # directory from which to load the data
+    # Get data from HVS catalog
+    if catalog == 1:
+        path_dat = '/disks/strw14/TvdB/Master2/Dataset/Omar/' # directory from which to load the data
+    else:
+        path_dat = '/disks/strw14/TvdB/Master2/Dataset/Original/'
+    
     X_train, Y_train, X_val, Y_val, X_test, Y_test = load_data(path_dat, percentage)
     
-    # Remove bias unit (not needed for Keras)
-    X_train = np.delete(X_train, 0, axis=1)
-    X_test = np.delete(X_test, 0, axis=1)
+    if catalog != 1:
+        # Remove bias unit (not needed for Keras)
+        X_train = np.delete(X_train, 0, axis=1)
+        X_test = np.delete(X_test, 0, axis=1)
     
        
-    
-    print '\nTraining with %.5g%% of the data' %percentage
+    print '\nNetwork train:', run
+    print 'Training with %.5g%% of the data' %percentage
     print '--------------------------------------------------------------------'
     print 'Number of stars in the training set:', len(X_train)
     print 'Number of stars in the test set:', len(X_test)
@@ -646,17 +695,14 @@ def main(run, percentage, neurons, cost_function, activation, activation_last_la
 
     
 
-
-    
     # Adapt target values to activation
     Y_train, Y_val, Y_test = change_target_values(nn.activation_last_layer,
                                                   Y_train, Y_val, Y_test)
-
     # Start training
     loss = nn.train(X_train, Y_train, X_test, Y_test)
 
     # Run evaluation of the performance (on the test set!)
-    nn.performance_evaluation(X_test, Y_test)
+    nn.performance_evaluation(run, X_test, Y_test, threshold=0.5, make_plot=False)
     
     # End values of the Cost function
     Jmin_train = loss.train[-1]
@@ -666,7 +712,7 @@ def main(run, percentage, neurons, cost_function, activation, activation_last_la
     t_end = round((time.time()-t_init)/60./60., 3)
 
     # Save parameters and results to files
-    path_out = '/disks/strw14/TvdB/Master2/Keras/' # directory to output the files
+    path_out = '/disks/strw14/TvdB/Master2/Keras/Omar/' # directory to output the files
     nn.save_output(run, path_out, loss, t_end)
 
    
@@ -731,8 +777,8 @@ def new_option_parser():
                   help="Optimizatiopn alghorithm (default: Adam)", type='str')
         
     # Learning rate for optimizer
-    op.add_option("-l", "--lr", default = 0.001, dest="lr",
-                  help="Learning rate for optimizer (default: 0.001)", type='float')
+    op.add_option("-l", "--lr", default = 0.0001, dest="lr",
+                  help="Learning rate for optimizer (default: 0.0001)", type='float')
  
     # Decay of the learning rate after every update
     op.add_option("-d", "--decay", default = 0.0, dest="decay",
@@ -754,6 +800,9 @@ def new_option_parser():
     op.add_option("-v", "--verbose", default = 1, dest="verbose",
                   help="Verbosity level (default: 1)", type='int')
     
+    # HVS catalog to use
+    op.add_option("-C", "--catalog", default = 1, dest="catalog",
+                  help="HVS catalog to use (default: 1)", type='int')
     return op
     
     
