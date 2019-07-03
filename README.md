@@ -1,6 +1,6 @@
 ## Master Thesis
 
-This repository contains the programming codes used for my thesis of the master Astronomy and Data Science at Leiden University.
+This repository contains the programming codes used for my master thesis.
 
 The project involved the development of an artificial neural network to discover hypervelocity stars in the Gaia catalog, using only the astrometric parameters of the stars as input features. The network is trained on a mock population.
 
